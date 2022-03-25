@@ -1,0 +1,8 @@
+[Input file]
+pos_CoM.out
+[Output file]
+pos_CoM.lammpstrj
+[Number of atoms]
+12
+[Edge length of cubic box]
+45.9875 45.9875 63.083

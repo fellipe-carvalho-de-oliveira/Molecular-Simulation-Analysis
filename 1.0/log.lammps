@@ -1,0 +1,8 @@
+LAMMPS (31 Mar 2017)
+variable index_simu loop 1
+
+variable T index 1.0  					# Equilibrium temperature
+variable concentracao index 1.0
+
+log log.${index_simu}
+log log.1

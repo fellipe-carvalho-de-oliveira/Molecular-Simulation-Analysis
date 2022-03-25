@@ -1,0 +1,49 @@
+********************************General parameters********************************
+[Input file's name (Lammps output)]		[interval time]	[interval dump (in timesteps)]	[radius]	[cutoff]	[Kb (Boltzmann constant)]	[Temperatura]
+pos_CoM.lammpstrj				0.002		600				0.5		2.5		1		298
+
+****************************** STRUCTURAL PROPERTIES  ******************************
+
+********************************Probability contacts********************************
+[flag]				 
+0		
+********************************RDF*************************************************
+[flag]		[Number of bins]	[Freq. dump]  
+1		100			1000
+********************************Static Factor********************************
+[flag]		[Option]		[Number of bins]	   
+0		2			15			
+
+****************************** DYNAMICAL PROPERTIES  ******************************
+	
+********************************Self Intermediate Scattering Function********************************
+[flag]		[Tgap]		[Wavenumber]  
+0		1		2
+********************************Collective Intermediate Scattering Function********************************
+[flag]		[Tgap]		[Wavenumber]  
+0		1		2
+********************************Total Mean Square Displacement********************************
+[flag]		[Tgap]		[Contact Group]		 
+1		1		0
+********************************Number of contacts evolution********************************
+[flag]						 
+0	
+********************************Cluster and Angle Analysis********************************
+[flag]		[Cluster distance cuttof]	[Number of Molecules]	[Number Parti. / Mole]	[Max Nº contacts / Particle]			 
+0		7.1				342			16			1000
+[mass parti. 1]	[mass parti. 2]	[mass parti. 3]	[mass parti. 4]
+54.0		54.0		0.0		0.0
+[Massa total molécula]	[Número de bins probas ângulos]
+864.0			25
+
+****************************** RHEOLOGYCAL PROPERTIES  *****************************
+
+********************************General rheologycal parameters***********************
+[flag]	[Stress file]		[interval time]	[interval dump (in timesteps)]	[timesteps by period]
+0	ensaio_oscilatorio_1.dat	1	20				10000
+********************************Stress Autocorrelation Function***********************
+[flag]	[Tgap]	[option]	[Correlation Length (in timesteps)]	
+0	1	1		500
+********************************   viscosity,  G', G''  ***********************
+[flag]	[option]	[Amplitude (in case of option 2), in distance units]	
+0	2		0.2			

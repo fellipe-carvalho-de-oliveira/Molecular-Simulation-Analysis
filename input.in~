@@ -1,0 +1,42 @@
+********************************General parameters********************************
+[Input file's name (Lammps output)]		[interval time]	[interval dump (in timesteps)]	[radius]	[cutoff]	[Kb (Boltzmann constant)]	[Temperatura]
+gelation.lammpstrj				1.25e-04	10000				0.5		2.5		1				1.0
+
+****************************** STRUCTURAL PROPERTIES  ******************************
+
+********************************Probability contacts********************************
+[flag]				 
+0		
+********************************RDF*************************************************
+[flag]		[Number of bins]	[Freq. dump]  
+0		300			1
+********************************Static Factor********************************
+[flag]		[Option]		[Number of bins]	[Freq. dump]	[Number of last timesteps for averaging]   
+0		2			15			1		0
+
+****************************** DYNAMICAL PROPERTIES  ******************************
+	
+********************************Self Intermediate Scattering Function********************************
+[flag]		[Tgap]		[Wavenumber]  
+0		1		2
+********************************Collective Intermediate Scattering Function********************************
+[flag]		[Tgap]		[Wavenumber]  
+0		1		2
+********************************Total Mean Square Displacement********************************
+[flag]		[Tgap]		[Contact Group]		 
+0		1		0
+********************************Number of contacts evolution********************************
+[flag]						 
+0	
+
+****************************** RHEOLOGYCAL PROPERTIES  *****************************
+
+********************************General rheologycal parameters***********************
+[flag]	[Stress file]		[interval time]	[interval dump (in timesteps)]	[timesteps by period]
+1	../../../ensaio.dat		1.25e-05	8				8192
+********************************Stress Autocorrelation Function***********************
+[flag]	[Tgap]	[option]	[Correlation Length (in timesteps)]	
+0	1	1		1024
+********************************   viscosity,  G', G''  ***********************
+[flag]	[option]	[Amplitude (in case of option 2), in distance units]	
+1	2		1			

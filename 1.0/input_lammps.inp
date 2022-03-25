@@ -1,0 +1,136 @@
+variable index_simu loop 1
+ 
+variable T index 1.0  					# Equilibrium temperature  	
+variable concentracao index 1.0
+
+log log.${index_simu}
+
+
+units				lj
+dimension			3
+atom_style			full
+
+# change neighbor list parameters to avoid dangerous builds
+neighbor			2.0 bin
+neigh_modify			delay 3
+comm_modify 			vel yes
+
+read_data			data_lmp.out
+
+variable			rc equal 1.0
+
+pair_style			dpd $T ${rc} 34387  					
+pair_coeff	1	1	25	4.5	1
+pair_coeff	1	2	165.362815626677	4.5	1
+pair_coeff	1	3	116.862097154698	4.5	1
+pair_coeff	1	4	146.155374914401	4.5	1
+pair_coeff	1	5	7.1909203509054	4.5	1
+pair_coeff	2	2	25	4.5	1
+pair_coeff	2	3	35.9792833065638	4.5	1
+pair_coeff	2	4	25.5695494065343	4.5	1
+pair_coeff	2	5	129.458804641795	4.5	1
+pair_coeff	3	3	25	4.5	1
+pair_coeff	3	4	33.9335949525505	4.5	1
+pair_coeff	3	5	76.0819248063004	4.5	1
+pair_coeff	4	4	25	4.5	1
+pair_coeff	4	5	126.398804395962	4.5	1
+pair_coeff	5	5	25	4.5	1
+
+# Parâmetros de lig, ângulo e impróprio tirados do Chen2018 e com o coarse-graining do Striolo
+variable			k_lig_aro equal 1000
+variable			k_lig_ali equal 100
+variable			r0_aro equal 0.8*${rc}
+variable			r0_ali equal 0.9*${rc}
+bond_style 			harmonic
+bond_coeff 			1 ${k_lig_aro} ${r0_aro} 	# B_asp-B_asp # spring const = 150 Kcal/mol/Ang² e equi.dist = 3 Angs  
+bond_coeff 			2 ${k_lig_aro} ${r0_aro}   	# B_asp-Z_asp # spring const = 150 Kcal/mol/Ang² e equi.dist = 3 Angs  
+bond_coeff 			3 ${k_lig_ali} ${r0_ali}	# B_asp-A_asp # spring const = 1.50 Kcal/mol/Ang² e equi.dist = 4.25 Angs  
+bond_coeff			4 ${k_lig_ali} ${r0_ali}	# Z_asp-A_asp # spring const = 1.50 Kcal/mol/Ang² e equi.dist = 4.25 Angs  
+bond_coeff			5 ${k_lig_ali} ${r0_ali}	# A_asp-A_asp # spring const = 1.50 Kcal/mol/Ang² e equi.dist = 4.25 Angs  
+
+variable			k_ang equal 125
+angle_style 			cosine/delta
+angle_coeff 			1 ${k_ang} 120.0 		# K and theta0 , 300 Kcal/mol e 120 graus
+
+variable			k_imp equal 5
+improper_style 			cvff
+improper_coeff	 		* ${k_imp} -1 2		# K d n, K = 12.5 Kcal/mol 
+
+variable                        dt equal 0.002
+mass				* 1.0
+velocity			all create $T 12345 dist gaussian
+fix				1 all nve
+
+variable                        total_timesteps equal 3000000
+variable			equi_timesteps	equal round(${total_timesteps}*50/100) #10% of total time
+variable			thermo_equi	equal round(${equi_timesteps}/1000)
+variable			thermo_prod	equal round(${total_timesteps}/1000)
+variable                        dump equal round(${total_timesteps}/1)
+
+# Equilibration
+timestep                        ${dt}
+thermo                          ${thermo_equi}
+thermo_style                    custom step temp press pe ke etotal epair emol
+run                             ${equi_timesteps}
+reset_timestep                  0
+
+# Production
+group 				all type 1 2 3 4 5
+group                           aroma_ring type 3
+group                           asfalteno type 3 4 5
+
+#MSD computation
+compute				chunk_aroma_ring aroma_ring chunk/atom molecule nchunk once ids once compress yes
+compute				com_aroma_ring aroma_ring com/chunk chunk_aroma_ring
+fix				2 aroma_ring ave/time 1 6000 6000 c_com_aroma_ring[*] mode vector file pos_CoM.out #these positions are already unwrapped
+
+# Stress computation
+compute				peratom asfalteno stress/atom NULL
+compute				p asfalteno reduce sum c_peratom[4] c_peratom[5] c_peratom[6]   #  Pxy, Pxz, Pyz
+variable			n_total equal count(all)
+variable			v equal vol
+variable			n_asfal equal count(asfalteno)
+variable 			conversion equal ${v}/${n_total}*${n_asfal} # As stress/atom is in Pressure*volume units, I need to fix it by dividing the quantities by the volume of atoms in the group	
+variable 			pxy equal -c_p[1]/${conversion}
+variable 			pxz equal -c_p[2]/${conversion}
+variable 			pyz equal -c_p[3]/${conversion}
+fix				3 all ave/time 1 10 10 v_pxy v_pxz v_pyz file stress.dat
+
+#IFT computation
+				#converter KbT/rc² para mN/m
+variable			kb equal 1.38064852E-23  # J/K
+variable			temperature equal 298 # K
+variable			cuttof_radius equal 6.74e-10 # m
+variable			conversion0 equal ${kb}*${temperature}/${cuttof_radius}/${cuttof_radius} # N/m
+variable			conversion equal ${conversion0}*1000 # mN/m
+variable			number_interfaces equal 2 # só tem uma molécula de asfal, nessa concentração
+
+variable			Nfreq	equal ${thermo_prod}
+variable			Nrepeat	equal ${Nfreq}/10  # esse número dividindo deve ser Nevery
+variable			Nevery	equal 10
+				
+
+
+variable			IFTx equal abs((pxx-(pyy+pzz)/2)*lx)*${conversion}/${number_interfaces}
+fix				IFTx_ave all ave/time ${Nevery} ${Nrepeat} ${Nfreq} v_IFTx ave running start 0
+
+variable			IFTy equal abs((pyy-(pxx+pzz)/2)*ly)*${conversion}/${number_interfaces}
+fix				IFTy_ave all ave/time ${Nevery} ${Nrepeat} ${Nfreq} v_IFTy ave running start 0
+
+variable			IFTz equal abs((pzz-(pxx+pyy)/2)*lz)*${conversion}/${number_interfaces}
+fix				IFTz_ave all ave/time ${Nevery} ${Nrepeat} ${Nfreq} v_IFTz ave running start 0
+
+dump				1 all custom ${dump} all_${concentracao}.lammpstrj id mol type x y z 
+dump				2 asfalteno custom ${dump} asfal_${concentracao}.lammpstrj id mol type x y z
+dump				3 aroma_ring custom ${dump} aroma_ring_${concentracao}.lammpstrj id mol type x y z  
+
+timestep     			${dt}
+thermo	     			${thermo_prod}
+thermo_style			custom step temp press pe ke etotal epair emol v_IFTx v_IFTy v_IFTz
+run				${total_timesteps}
+
+clear
+next T
+next concentracao
+next index_simu
+jump input_lammps.inp

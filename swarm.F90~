@@ -1,0 +1,163 @@
+
+
+
+
+srand(time(NULL)); // initializing random function
+
+
+//-----Allocate variables values for each particle------------------
+x = calloc(k,sizeof(double *));
+if(x == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+
+for (i=0;i<k;i++)
+{
+x[i] = calloc(nv,sizeof(double));
+if(x[i] == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+}
+//-------------------------------------------------------------------
+
+
+//-----Allocate variables values relative to the best objective function value for each particle-------------
+xbest = calloc(k,sizeof(double *));
+if(xbest == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+
+for (i=0;i<k;i++)
+{
+xbest[i] = calloc(nv,sizeof(double));
+if(xbest[i] == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+}
+//-------------------------------------------------------------------
+
+
+//--------xglobal - Allocate the global best coordinates------------
+xglobal = calloc(nv,sizeof(double));
+if(xglobal == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+//-----------------------------------------------------------------
+
+
+//------Const - Allocate two constants for each variables----------
+Const = calloc(2,sizeof(double *));
+if(Const == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+
+for (i=0;i<2;i++)
+{
+Const[i] = calloc(nv,sizeof(double));
+if(Const[i] == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+}
+//----------------------------------------------------------------
+
+
+//------V - Velocity of each particle-----------------------------
+V = calloc(k,sizeof(double *));
+if(V == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+
+for (i=0;i<k;i++)
+{
+V[i] = calloc(nv,sizeof(double));
+if(V[i] == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+}
+//---------------------------------------------------------------
+
+
+//Sbest - Allocates objective function best values for each particle
+Sbest = calloc(k,sizeof(double *));
+if(Sbest == NULL) {printf("ALLOCATION ERROR\n"); exit(1);}
+//-----------------------------------------------------------------
+
+
+//////////Initializing method//////////
+arqout=fopen("optim_results.out","wt");
+if(arqout==NULL) { printf("Could not open %s for writing.\n","optim_results.out"); exit(1); }
+
+// iteration zero
+Sglobal = 1.E+30; //Sglobal initialization
+t=0;
+
+for (i=0;i<k;i++)
+{
+   for (j=0;j<nv;j++)
+   {
+   Const[0][j]=(double)rand()/(double)RAND_MAX;
+   xbest[i][j]=x[i][j]=minmax[0][j]+Const[0][j]*(minmax[1][j]-minmax[0][j]);
+
+   V[i][j]=0.;
+   }
+
+Objfun(&S, x[i]);
+Sbest[i]=S;
+
+ if(Sbest[i] < Sglobal)
+ {
+ Sglobal = Sbest[i];
+ for(j=0;j<nv;j++){xglobal[j] = xbest[i][j];}
+ }
+
+}
+
+//Printing global best variables and objetive function values
+for(i=0;i<nv;i++)
+{
+fprintf(arqout,"%9.8E  ",xglobal[i]);
+}
+fprintf(arqout,"%9.8E   %d\n",Sglobal,t);
+
+
+
+//other iterations
+for(t=1;t<=it;t++)
+{
+omega[0] = omega[1] + (omega[2]-omega[1])*((t-1)/(it-1));
+
+ for(i=0;i<k;i++)
+ {
+     for(j=0;j<nv;j++)
+     {
+     Const[0][j]=(double)rand()/(double)RAND_MAX;
+     Const[1][j]=(double)rand()/(double)RAND_MAX; 
+
+     V[i][j] = /*omega[0]**/V[i][j]+c1*Const[0][j]*(xbest[i][j]-x[i][j])+c2*Const[1][j]*(xglobal[j]-x[i][j]);
+     
+     x[i][j] = x[i][j] + V[i][j];
+     if(x[i][j]>minmax[1][j]){x[i][j]=minmax[1][j]; V[i][j]=0;}
+     if(x[i][j]<minmax[0][j]){x[i][j]=minmax[0][j]; V[i][j]=0;}
+     }
+
+  Objfun(&S,x[i]);
+  if(S<Sbest[i])
+  {
+  Sbest[i]=S;
+  for(j=0;j<nv;j++) xbest[i][j]=x[i][j];
+  if(Sbest[i]<Sglobal)
+  {
+  Sglobal=Sbest[i];
+  for(j=0;j<nv;j++) xglobal[j]=xbest[i][j];
+  }
+  }
+ }
+
+for(j=0;j<nv;j++) fprintf(arqout,"%9.8E  ",xglobal[j]);
+
+fprintf(arqout,"%9.8E   %d\n",Sglobal,t);
+
+}
+
+//if(grad == 1)
+//{
+//for(i=0;i<5;i++)
+//{
+//  for(j=0;j<nv;j++) xglobalgrad[j] = xglobal[j]+0.001;
+//  Objfun(&S,xglobalgrad);
+//  Sglobalgrad = S;
+
+//  for(j=0;j<nv;j++) xglobalgrad[j] = xglobal[j]-0.001;
+//  Objfun(&S,xglobalgrad);
+
+//Sglobal = Sglobal - 0.01*(Sglobalgrad-S)/0.002;
+//fprintf(arqout,"",Sglobal);
+//}
+//}
+
+fclose(arqout);
+
+return(0);
+}

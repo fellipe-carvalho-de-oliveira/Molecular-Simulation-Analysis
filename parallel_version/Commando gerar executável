@@ -1,0 +1,7 @@
+Gerar executável:
+
+gfortran -ftree-vectorize -ftree-vectorizer-verbose=3 -g global_variables.F90  cluster_analysis.f90 FFTs.F90  integration_methods.F90 interpolation_fitting_methods.F90 nrtype.F90 nrutil.F90 rheology_routines.F90 sinal_processing.F90 swarm_routines.F90 functions.F90 main.F90 -o analise -fopenmp
+
+Escolher número processadores:
+
+export OMP_NUM_THREADS=1

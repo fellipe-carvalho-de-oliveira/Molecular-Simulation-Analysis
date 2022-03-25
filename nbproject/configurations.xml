@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configurationDescriptor version="100">
+  <logicalFolder name="root" displayName="root" projectFiles="true" kind="ROOT">
+    <logicalFolder name="HeaderFiles"
+                   displayName="Header Files"
+                   projectFiles="true">
+    </logicalFolder>
+    <logicalFolder name="ResourceFiles"
+                   displayName="Resource Files"
+                   projectFiles="true">
+    </logicalFolder>
+    <logicalFolder name="SourceFiles"
+                   displayName="Source Files"
+                   projectFiles="true">
+      <itemPath>FFTs.F90</itemPath>
+      <itemPath>cluster_analysis.f90</itemPath>
+      <itemPath>fitting_planes.f90</itemPath>
+      <itemPath>functions.F90</itemPath>
+      <itemPath>global_variables.F90</itemPath>
+      <itemPath>integration_methods.F90</itemPath>
+      <itemPath>interpolation_fitting_methods.F90</itemPath>
+      <itemPath>main.F90</itemPath>
+      <itemPath>nrtype.F90</itemPath>
+      <itemPath>nrutil.F90</itemPath>
+      <itemPath>rheology_routines.F90</itemPath>
+      <itemPath>sinal_processing.F90</itemPath>
+      <itemPath>statistical_functions.f90</itemPath>
+      <itemPath>swarm_routines.F90</itemPath>
+    </logicalFolder>
+    <logicalFolder name="TestFiles"
+                   displayName="Test Files"
+                   projectFiles="false"
+                   kind="TEST_LOGICAL_FOLDER">
+    </logicalFolder>
+    <logicalFolder name="ExternalFiles"
+                   displayName="Important Files"
+                   projectFiles="false"
+                   kind="IMPORTANT_FILES_FOLDER">
+      <itemPath>Makefile</itemPath>
+    </logicalFolder>
+  </logicalFolder>
+  <projectmakefile>Makefile</projectmakefile>
+  <confs>
+    <conf name="Debug" type="1">
+      <toolsSet>
+        <compilerSet>GNU|GNU</compilerSet>
+        <dependencyChecking>true</dependencyChecking>
+        <rebuildPropChanged>false</rebuildPropChanged>
+      </toolsSet>
+      <compileType>
+      </compileType>
+      <item path="FFTs.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="cluster_analysis.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="fitting_planes.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="functions.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="global_variables.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="integration_methods.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="interpolation_fitting_methods.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="main.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="nrtype.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="nrutil.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="rheology_routines.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="sinal_processing.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="statistical_functions.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="swarm_routines.F90" ex="false" tool="2" flavor2="0">
+      </item>
+    </conf>
+    <conf name="Release" type="1">
+      <toolsSet>
+        <compilerSet>default</compilerSet>
+        <dependencyChecking>true</dependencyChecking>
+        <rebuildPropChanged>false</rebuildPropChanged>
+      </toolsSet>
+      <compileType>
+        <cTool>
+          <developmentMode>5</developmentMode>
+        </cTool>
+        <ccTool>
+          <developmentMode>5</developmentMode>
+        </ccTool>
+        <fortranCompilerTool>
+          <developmentMode>5</developmentMode>
+        </fortranCompilerTool>
+        <asmTool>
+          <developmentMode>5</developmentMode>
+        </asmTool>
+      </compileType>
+      <item path="FFTs.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="cluster_analysis.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="fitting_planes.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="functions.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="global_variables.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="integration_methods.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="interpolation_fitting_methods.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="main.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="nrtype.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="nrutil.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="rheology_routines.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="sinal_processing.F90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="statistical_functions.f90" ex="false" tool="2" flavor2="0">
+      </item>
+      <item path="swarm_routines.F90" ex="false" tool="2" flavor2="0">
+      </item>
+    </conf>
+  </confs>
+</configurationDescriptor>

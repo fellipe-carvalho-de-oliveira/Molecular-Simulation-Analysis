@@ -1,0 +1,66 @@
+# Gnuplot script file for plotting data
+#
+# Tutorial para uso do Gnuplot
+# Vou comentar os comandos abaixo
+# Ha, # e comentario!
+reset  # limpa a memoria do gnuplot para nao usar dados antigos
+#
+# Com as 2 linhas abaixo, o resultado grafico e impresso em arquivo, onde algumas palavras podem ser abreviadas da seguinte forma:
+# set terminal postscript eps enhanced nao_sei nao_sei "nome da fonte" tamanho da fonte
+
+set term post eps enh dl 5 "Helvetica" 25
+
+# Inicializacao
+# set   autoscale                        # scale axes automatically
+# unset log                              # remove any log-scaling
+# unset label                            # remove any previous labels
+# set xtic auto                          # set xtics automatically
+# set ytic auto                          # set ytics automatically
+# set size ratio 0.5                     # set the ratio between width and height
+
+# Setting axis properties (labels, ticks, etc.)
+# set logscale y                           # escala log
+#set yrange [1.0e-1:1e3]                  # Ajuste do range da escala x
+#set xrange [-.01:1]                      # Ajuste do range da escala y
+
+set key right bottom    		# Local do grafico onde a legenda vai ficar
+set xlabel "{/Italic q(ang^{-1})*sigma}"                  # label do eixo x
+set ylabel "{/Italic S(q)}"
+
+# set format y "10^{%T}"                   # formatacao do eixo y -> 10 elevado ao expoente
+# A formatacao no gnuplot e identica a em C, com mais algumas opcoes.
+# Definindo label do eixo y e girando- em 90 graus
+# set label 1 "{/Symbol x}_{i}" at graph -0.25, graph 0.5
+# Definindo espacamento dos ticks
+# set xtics 0.2
+# set ytics 1
+# Definindo numero de ticks pequenos entre os ticks maiores
+# set mxtics 4
+# set mytics 10
+# set lmargin 20
+
+# Set labels and arrows into the graph
+# Pode colocar labels e setas em determinada posicao do grafico para indicar melhor
+#set label "i = 1" at 6,1
+#set arrow from 5.8,1 to 2,4.0e-1
+#set label "i = 2" at 30,1.5e-2
+#set label "i = 3" at 30,1.2e-3
+#set label "i = 4" at 30,7.0e-5
+
+# Define o estilo da linha
+# Setting line styles as line width (lw), type (lt), point type (pt), point size (ps), etc.
+set style line 1 lw 3 lt 1
+set style line 2 lw 3 lt 2 pt 6 ps 1.2
+set style line 3 lw 3 lt 6 pt 8 ps 1.2
+set style line 4 lw 3 lt 8 pt 12 ps 1.2
+
+set output "S(q).eps"
+
+# Plotando o arquivo dat:
+# plot nome do arquivo usando colx:coly titulo_legenda 'TITULO' with tipo_linha ls(lineStyle) 
+# ,\ indica que mais dados serao colocados no grafico. E note que vc pode fazer calculos com os dados das colunas.
+plot "output.out" using ($1):($2) title 'S(q)' with lines ls 1
+     
+# Mais detalhes:
+# http://t16web.lanl.gov/Kawano/gnuplot/index-e.html
+

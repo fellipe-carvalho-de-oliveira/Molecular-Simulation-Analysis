@@ -1,0 +1,1492 @@
+!     
+! File:   functions.F90
+! Author: fellipe
+!
+! r: is the cuttof for  calculating the correlation (half of box size)  
+!
+! Created on May 20, 2015, 9:16 AM
+!
+
+MODULE functions
+USE nrtype
+USE nrutil
+USE sinal_processing     
+USE FFTs    
+USE global_variables
+USE swarm_routines
+USE integration_methods
+USe interpolation_fitting_methods
+ 
+CONTAINS
+
+SUBROUTINE contacs_number 
+  IMPLICIT NONE
+  INTEGER :: i , ii , j , jj , k , kk  , posi1 , posi2
+  REAL(8) :: dist_neigh
+  REAL(8), DIMENSION(:), ALLOCATABLE  :: rdf_bond , aux_bond 
+  
+  ALLOCATE(rdf_bond(number_of_bins_gr - 1))
+  
+  contacs_number_flag = 1
+  
+  IF (radial_distribution_flag == 0) THEN
+    CALL radial_distri
+  END IF
+  
+  DO i = 1,nframes     
+      
+    DO j = 1,number_of_bins_gr-1   
+      rdf_bond(j) = rdf(j,i) 
+    END DO
+    posi1 = 0
+    posi2 = 0
+    
+    CALL ordenar_cres(rdf_bond,posi1) 
+    
+    ALLOCATE(aux_bond(number_of_bins_gr-1 - posi1))
+      
+    DO j = posi1 + 1,number_of_bins_gr-1    
+      aux_bond(j - posi1) = rdf(j,i)
+    END DO    
+    
+    CALL ordenar_decres(aux_bond,posi2)
+    
+    posi2 = 2 !!!!
+    
+    bond_length(i) = distance_rdf(posi1 + posi2)
+    
+    DO k = 1,natoms
+      DO kk = 1,natoms 
+        dist_neigh = sqrt( (rxyz_frames(kk,1,i) - rxyz_frames(k,1,i)) ** 2 + (rxyz_frames(kk,2,i) - rxyz_frames(k,2,i)) ** 2 + &
+        (rxyz_frames(kk,3,i) - rxyz_frames(k,3,i)) ** 2 )   
+        IF ( (dist_neigh <= bond_length(i)) .and. (dist_neigh /= 0.0) .and. (bond_length(i) < cutoff) ) THEN
+            Nc(k,i) = Nc(k,i) + 1
+        END IF    
+      END DO
+    END DO
+    
+    
+    DEALLOCATE(aux_bond)
+  END DO 
+  
+  DEALLOCATE(rdf_bond)
+END SUBROUTINE contacs_number
+
+
+SUBROUTINE Pc_function
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk , status_open
+  
+  IF (contacs_number_flag == 0) THEN
+    CALL  contacs_number
+  END IF 
+  
+  Pc_flag = 1
+  
+  OPEN(unit=4,file="Probability_contacts.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Probability_contacts.out"
+    
+  Pc = 0.0
+  !Calculating Probabilities
+  DO i = 1,nframes       
+    DO j = 1,natoms
+      SELECT CASE (Nc(j,i))
+        CASE (0)
+          Pc(1,i) =  Pc(1,i) + 1.0  
+        CASE (1)
+          Pc(2,i) =  Pc(2,i) + 1.0  
+        CASE (2)
+          Pc(3,i) =  Pc(3,i) + 1.0  
+        CASE (3)
+          Pc(4,i) =  Pc(4,i) + 1.0
+        CASE (4)
+          Pc(5,i) =  Pc(5,i) + 1.0  
+        CASE (5)
+          Pc(6,i) =  Pc(6,i) + 1.0
+        CASE (6)
+          Pc(7,i) =  Pc(7,i) + 1.0          
+        CASE (7)
+          Pc(8,i) =  Pc(8,i) + 1.0              
+        CASE (8)
+          Pc(9,i) =  Pc(9,i) + 1.0  
+        CASE (9)
+          Pc(10,i) =  Pc(10,i) + 1.0                      
+        CASE (10)
+          Pc(11,i) =  Pc(11,i) + 1.0
+        CASE (11)
+          Pc(12,i) =  Pc(12,i) + 1.0                             
+        CASE (12)                                 
+          Pc(13,i) =  Pc(13,i) + 1.0             
+      END SELECT
+    END DO
+    
+    DO j = 1,13
+      Pc(j,i) = Pc(j,i) / natoms
+    END DO   
+    
+    WRITE(4,*) "frame    ",i
+    WRITE(4,*) "Contacts number    " , "Pc"
+    DO j = 1,13
+      WRITE(4,*) j - 1 , "      " , Pc(j,i) 
+    END DO
+    WRITE(4,*) 
+    WRITE(4,*)
+    
+  END DO 
+  !End Calculating Probabilities
+  
+  CLOSE(4)     
+  
+END SUBROUTINE Pc_function
+
+!SUBROUTINE relative_proba_by_contact_number
+!  OPEN(unit=10,file="Relative_proba(group_size).out",status="replace",iostat = status_open )
+!  IF (status_open > 0) STOP "error opening Relative_proba(group_size).out"
+!  
+!  WRITE(10,*) "frame    ",i
+!  WRITE(10,*) "Contacts number    " , "P(Nc+1) / P(Nc)"
+!  DO j = 1,12
+!    WRITE(10,*) j - 1 , "      " , Pc(j+1,i) / Pc(j,i)
+!  END DO
+!  WRITE(10,*) 
+!  WRITE(10,*)
+!    
+!  CLOSE(10)   
+!  
+!END SUBROUTINE relative_proba_by_contact_number
+
+
+
+SUBROUTINE create_contact_group !creates the groups and calculates the number of particle in each of them
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk , posi 
+  
+  create_contact_group_flag = 1
+  
+  !Calculating the frequency of occurence for each atom
+  DO j = 1,natoms
+   count_part = 0.0
+    DO i = 1,nframes  
+      SELECT CASE (Nc(j,i))
+      CASE (0)
+        count_part(1) = count_part(1) + 1   
+      CASE (1)
+        count_part(2) = count_part(2) + 1  
+      CASE (2)
+        count_part(3) = count_part(3) + 1  
+      CASE (3)
+        count_part(4) = count_part(4) + 1  
+      CASE (4)
+        count_part(5) = count_part(5) + 1  
+      CASE (5)
+        count_part(6) = count_part(6) + 1  
+      CASE (6)
+        count_part(7) = count_part(7) + 1  
+      CASE (7)
+        count_part(8) = count_part(8) + 1  
+      CASE (8)
+        count_part(9) = count_part(9) + 1  
+      CASE (9)
+        count_part(10) = count_part(10) + 1  
+      CASE (10)
+        count_part(11) = count_part(11) + 1  
+      CASE (11)
+        count_part(12) = count_part(12) + 1  
+      CASE (12)
+        count_part(13) = count_part(13) + 1 
+      END SELECT  
+    END DO
+    
+    CALL ordenar_cres(count_part,posi)
+    index_part(j) = posi - 1
+    
+  END DO
+  !End calculating the frequency of occurence for each atom
+   
+  !creating count_part vector, number of particles in a bin
+  count_part = 0.0
+  DO j = 1,natoms
+    SELECT CASE (index_part(j))
+    CASE (0)
+      count_part(1) = count_part(1) + 1   
+    CASE (1)
+      count_part(2) = count_part(2) + 1  
+    CASE (2)
+      count_part(3) = count_part(3) + 1  
+    CASE (3)
+      count_part(4) = count_part(4) + 1  
+    CASE (4)
+      count_part(5) = count_part(5) + 1  
+    CASE (5)
+      count_part(6) = count_part(6) + 1  
+    CASE (6)
+      count_part(7) = count_part(7) + 1  
+    CASE (7)
+      count_part(8) = count_part(8) + 1  
+    CASE (8)
+      count_part(9) = count_part(9) + 1  
+    CASE (9)
+      count_part(10) = count_part(10) + 1  
+    CASE (10)
+      count_part(11) = count_part(11) + 1  
+    CASE (11)
+      count_part(12) = count_part(12) + 1  
+    CASE (12)
+      count_part(13) = count_part(13) + 1 
+    END SELECT  
+  END DO
+
+  OPEN(unit=1,file="Number_particles_by_group.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Number_particles_by_group.out"
+  
+  WRITE(1,*) "numero de particulas por grupo"
+  DO i=1,13
+    WRITE(1,*) "group " , i - 1, count_part(i) 
+  END DO    
+  
+  CLOSE(1)
+END SUBROUTINE create_contact_group
+
+SUBROUTINE MSD_by_contact_number
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk , posi , status_open
+  REAL(8) :: distance , norm  
+  REAL(8), DIMENSION(nframes,13) :: MSD_Nc 
+  REAL(8), DIMENSION(13) :: a 
+  REAL(8), DIMENSION(nframes - 1,13) :: MSD_derivative
+  MSD_Nc = 0.0
+  
+  IF (contacs_number_flag == 0) THEN
+    !This function calculates Nc(j,i) that gives the number of contacts of the particle (j) at each frame (i) 
+    CALL contacs_number
+  END IF
+  
+  IF (create_contact_group_flag == 0) THEN
+    CALL create_contact_group  !creates count_part that countains the number of particles by contact number
+  END IF   
+  
+  MSD_by_contact_number_flag = 1
+    
+  OPEN(unit=11,file="MSD_by_contact_number.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file MSD_by_contact_number.out" 
+  
+  WRITE(11,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   "  
+  
+  !calculating correlation
+  DO k = 1,nframes,MSD_Tgap  !delta t
+    a = 0.0 
+    DO kk = 1,nframes - k + 1       !number of origins
+      DO j = 1,natoms
+        SELECT CASE (index_part(j)) 
+        CASE (0)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(1) = a(1) + distance 
+        CASE (1)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(2) = a(2) + distance
+        CASE (2)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(3) = a(3) + distance  
+        CASE (3)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(4) = a(4) + distance
+        CASE (4)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(5) = a(5) + distance 
+        CASE (5)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(6) = a(6) + distance
+        CASE (6)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(7) = a(7) + distance    
+        CASE (7)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(8) = a(8) + distance 
+        CASE (8)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(9) = a(9) + distance  
+        CASE (9)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(10) = a(10) + distance 
+        CASE (10)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(11) = a(11) + distance
+        CASE (11)
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(12) = a(12) + distance 
+        CASE (12)                                 
+          distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+          distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+          a(13) = a(13) + distance
+        END SELECT  
+      END DO
+    END DO
+    
+    DO j=1,13
+      IF (count_part(j) /= 0) THEN    
+        MSD_Nc(k,j) =  a(j) / (nframes - k + 1)  / count_part(j)
+      END IF
+    END DO
+    
+    WRITE(11,*) (k - 1) * dump_interval * delta_t ,MSD_Nc(k,1),MSD_Nc(k,2),MSD_Nc(k,3),MSD_Nc(k,4),MSD_Nc(k,5),MSD_Nc(k,6),&
+                MSD_Nc(k,7),MSD_Nc(k,8), MSD_Nc(k,9),MSD_Nc(k,10),MSD_Nc(k,11),MSD_Nc(k,12),MSD_Nc(k,13)
+    
+  END DO
+  !end calculating MSD (correlating)   
+  
+  OPEN(unit=13,file="MSD_derivative.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening MSD_derivative.out"
+  
+  WRITE(13,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   "  
+  
+  !Calculating rates of particle migration and rates of gaining a contact 
+  DO i = 1,nframes - 1
+    DO k = 1,13  
+      MSD_derivative(i,k) = ( MSD_Nc(i+1,k) - MSD_Nc(i,k) ) / delta_t     
+    END DO  
+    
+    WRITE(13,*) i,MSD_derivative(i,1),MSD_derivative(i,2),MSD_derivative(i,3),MSD_derivative(i,4),MSD_derivative(i,5),&
+                          MSD_derivative(i,6),MSD_derivative(i,7),MSD_derivative(i,8),&
+                          MSD_derivative(i,9),MSD_derivative(i,10),MSD_derivative(i,11),MSD_derivative(i,12),MSD_derivative(i,13)                      
+   
+  END DO   
+  !END Calculating rates of particle migration and rates of gaining a contact 
+  
+  OPEN(unit=15,file="MSD_derivative_weighted.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening file MSD_derivative_weighted.out"
+  
+  WRITE(15,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   "  
+  
+  !Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+  DO i = 1,nframes - 1    
+    WRITE(15,*) i,MSD_derivative(i,1)*count_part(1),MSD_derivative(i,2)*count_part(2),&
+                          MSD_derivative(i,3)*count_part(3),MSD_derivative(i,4)*count_part(4),&
+                          MSD_derivative(i,5)*count_part(5),MSD_derivative(i,6)*count_part(6),&
+                          MSD_derivative(i,7)*count_part(7),MSD_derivative(i,8)*count_part(8),&
+                          MSD_derivative(i,9)*count_part(9),MSD_derivative(i,10)*count_part(10),&
+                          MSD_derivative(i,11)*count_part(11),MSD_derivative(i,12)*count_part(12),&
+                          MSD_derivative(i,13)*count_part(13)
+ 
+  END DO   
+  !END Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+ 
+  
+  !Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size , both normalized  
+  OPEN(unit=17,file="MSD_derivative_weighted_normalized.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening file MSD_derivative_weighted_normalized.out"
+  
+  WRITE(17,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   "  
+  
+  !Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+  DO i = 1,nframes - 1    
+    
+    norm = 0.0
+    DO j = 1,13
+      norm = norm + MSD_derivative(i,j)*count_part(j)  
+    END DO    
+      
+    WRITE(17,*)"t[",i,"]",MSD_derivative(i,1)*count_part(1)/norm,MSD_derivative(i,2)*count_part(2)/norm,&
+                          MSD_derivative(i,3)*count_part(3)/norm,MSD_derivative(i,4)*count_part(4)/norm,&
+                          MSD_derivative(i,5)*count_part(5)/norm,MSD_derivative(i,6)*count_part(6)/norm,&
+                          MSD_derivative(i,7)*count_part(7)/norm,MSD_derivative(i,8)*count_part(8)/norm,&
+                          MSD_derivative(i,9)*count_part(9)/norm,MSD_derivative(i,10)*count_part(10)/norm,&
+                          MSD_derivative(i,11)*count_part(11)/norm,MSD_derivative(i,12)*count_part(12)/norm,&
+                          MSD_derivative(i,13)*count_part(13)/norm
+  
+  END DO   
+  !END Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size, both normalized  
+
+  CLOSE(11)
+  CLOSE(13)
+  CLOSE(15)
+  CLOSE(17)
+END SUBROUTINE MSD_by_contact_number
+
+SUBROUTINE Nc_by_contact_number
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk 
+  REAL(8) :: norm   
+  REAL(8), DIMENSION(13) :: a 
+  REAL(8), DIMENSION(nframes,13) :: NC_ave
+  REAL(8), DIMENSION(nframes - 1,13) :: Nc_ave_derivative
+  NC_ave = 0.0
+  
+  Nc_by_contact_number_flag = 1
+  
+  IF (contacs_number_flag == 0) THEN
+    !This function calculates Nc(j,i) that gives the number of contacts of the particle (j) at each frame (i) 
+    CALL contacs_number
+  END IF
+  
+  IF (create_contact_group_flag == 0) THEN
+    CALL create_contact_group  !creates count_part that countains the number of particles by contact number
+  END IF   
+  
+  OPEN(unit=12,file="Nc_by_contact_number.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Nc_average.out"
+  
+  WRITE(12,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   " 
+  
+  DO j = 1,13
+    a(j) = (j - 1)
+  END DO    
+  
+  !calculating number of contacts average
+  DO k = 1,nframes  !delta t 
+    DO j = 1,natoms    
+      SELECT CASE (index_part(j))
+      CASE (0)
+        a(1) = a(1) + Nc(j,k) 
+      CASE (1)
+        a(2) = a(2) + Nc(j,k)
+      CASE (2)
+        a(3) = a(3) + Nc(j,k)  
+      CASE (3)
+        a(4) = a(4) + Nc(j,k)
+      CASE (4)
+        a(5) = a(5) + Nc(j,k) 
+      CASE (5)
+        a(6) = a(6) + Nc(j,k) 
+      CASE (6)
+        a(7) = a(7) + Nc(j,k) 
+      CASE (7)
+        a(8) = a(8) + Nc(j,k) 
+      CASE (8)
+        a(9) = a(9) + Nc(j,k) 
+      CASE (9)
+        a(10) = a(10) + Nc(j,k) 
+      CASE (10)
+        a(11) = a(11) + Nc(j,k) 
+      CASE (11)
+        a(12) = a(12) + Nc(j,k) 
+      CASE (12)                                 
+        a(13) = a(13) + Nc(j,k) 
+      END SELECT
+    END DO
+    
+    DO j=1,13
+      IF (count_part(j) /= 0.0) THEN    
+        Nc_ave(k,j) =  a(j) / k  / count_part(j) !average over number of frames taken into account and number of members of the contact groups
+      END IF 
+    END DO
+    
+    WRITE(12,*) (k - 1) * dump_interval * delta_t ,Nc_ave(k,1),Nc_ave(k,2),Nc_ave(k,3),Nc_ave(k,4),Nc_ave(k,5),Nc_ave(k,6),&
+                Nc_ave(k,7),Nc_ave(k,8), Nc_ave(k,9),Nc_ave(k,10),Nc_ave(k,11),Nc_ave(k,12),Nc_ave(k,13)
+  END DO
+  !End calculating number of contacts average
+  
+  OPEN(unit=14,file="Nc_ave_derivative.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening file Nc_ave_derivative.out"
+  
+  WRITE(14,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   " 
+  
+  !Calculating rates of particle migration and rates of gaining a contact 
+  DO i = 1,nframes - 1
+    DO k = 1,13  
+      Nc_ave_derivative(i,k) = ( Nc_ave(i+1,k) - Nc_ave(i,k) ) / delta_t      
+    END DO  
+                          
+    WRITE(14,*) i,Nc_ave_derivative(i,1),Nc_ave_derivative(i,2),Nc_ave_derivative(i,3),Nc_ave_derivative(i,4),&
+                          Nc_ave_derivative(i,5),Nc_ave_derivative(i,6),Nc_ave_derivative(i,7),Nc_ave_derivative(i,8),&
+                          Nc_ave_derivative(i,9),Nc_ave_derivative(i,10),Nc_ave_derivative(i,11),Nc_ave_derivative(i,12),&
+                          Nc_ave_derivative(i,13)                      
+   
+  END DO   
+  !END Calculating rates of particle migration and rates of gaining a contact
+  
+  OPEN(unit=16,file="Nc_ave_derivative_weighted.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening file Nc_ave_derivative_weighted.out"
+  
+  WRITE(16,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   " 
+  
+  !Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+  DO i = 1,nframes - 1    
+                       
+    WRITE(16,*) i,Nc_ave_derivative(i,1)*count_part(1),Nc_ave_derivative(i,2)*count_part(2),&
+                          Nc_ave_derivative(i,3)*count_part(3),Nc_ave_derivative(i,4)*count_part(4),&
+                          Nc_ave_derivative(i,5)*count_part(5),Nc_ave_derivative(i,6)*count_part(6),&
+                          Nc_ave_derivative(i,7)*count_part(7),Nc_ave_derivative(i,8)*count_part(8),&
+                          Nc_ave_derivative(i,9)*count_part(9),Nc_ave_derivative(i,10)*count_part(10),&
+                          Nc_ave_derivative(i,11)*count_part(11),Nc_ave_derivative(i,12)*count_part(12),&
+                          Nc_ave_derivative(i,13)*count_part(13)                      
+   
+  END DO   
+  !END Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+   
+  OPEN(unit=18,file="Nc_ave_derivative_weighted_normalized.out",status="replace",iostat = status_open )
+  IF (status_open > 0) STOP "error opening file 18"
+  
+  WRITE(18,*) "time simulation   ", &
+  "group 0   ","group 1   ","group 2   ","group 3   ","group 4   ","group 5   ","group 6   ","group 7   ","group 8   ",&
+  "group 9   ","group 10   ","group 11   ",  "group 12   " 
+  
+  !Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size   
+  DO i = 1,nframes - 1    
+                        
+    norm = 0.0
+    DO j = 1,13
+      norm = norm + Nc_ave_derivative(i,j)*count_part(j)  
+    END DO                      
+                          
+    WRITE(18,*) i,Nc_ave_derivative(i,1)*count_part(1)/norm,Nc_ave_derivative(i,2)*count_part(2)/norm,&
+                          Nc_ave_derivative(i,3)*count_part(3)/norm,Nc_ave_derivative(i,4)*count_part(4)/norm,&
+                          Nc_ave_derivative(i,5)*count_part(5)/norm,Nc_ave_derivative(i,6)*count_part(6)/norm,&
+                          Nc_ave_derivative(i,7)*count_part(7)/norm,Nc_ave_derivative(i,8)*count_part(8)/norm,&
+                          Nc_ave_derivative(i,9)*count_part(9)/norm,Nc_ave_derivative(i,10)*count_part(10)/norm,&
+                          Nc_ave_derivative(i,11)*count_part(11)/norm,Nc_ave_derivative(i,12)*count_part(12)/norm,&
+                          Nc_ave_derivative(i,13)*count_part(13)/norm                      
+   
+  END DO   
+  !END Calculating rates of particle migration weighted by group size and rates of gaining a contact weighted by group size, both normalized  
+
+  CLOSE(12)
+  CLOSE(14) 
+  CLOSE(16)
+  CLOSE(18)
+END SUBROUTINE Nc_by_contact_number    
+
+
+SUBROUTINE MSD_total
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk 
+  REAL(8) :: distance , sum_msd, drx, dry, drz
+!  REAL(8), DIMENSION(n_molec,3) :: pos_mol 
+  REAL(8), DIMENSION(size(MSD)) :: time_msd 
+  REAL(8), DIMENSION(size(MSD) - 2) :: derivative_y 
+  
+  
+  OPEN(unit=10,file="MSD_total.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file MSD_total.out"
+  
+  WRITE(10,'(3x,a5,13x,a3)') "time","MSD"
+  
+  DO k = 1,nframes,MSD_Tgap  !delta t
+    sum_msd = 0.0  
+    
+!    !calculating autocorrelation function
+!    DO kk = 1,nframes - k + 1       !number of origins
+!      DO j = 1,natoms    
+!        distance = ( rxyz_frames(j,1,k + kk - 1) -  rxyz_frames(j,1,kk) ) ** 2.0
+!        distance = distance + ( rxyz_frames(j,2,k + kk - 1) -  rxyz_frames(j,2,kk) ) ** 2.0
+!        distance = distance + ( rxyz_frames(j,3,k + kk - 1) -  rxyz_frames(j,3,kk) ) ** 2.0    
+!        sum_msd = sum_msd + distance 
+!      END DO
+!    END DO
+!    !End calculating autocorrelation function
+    
+    !NEW MSD CALCULATION
+    DO j = 1,natoms    
+      drx = rxyz_frames(j,1,k) - rxyz_frames(j,1,1)
+      dry = rxyz_frames(j,2,k) - rxyz_frames(j,2,1)
+      drz = rxyz_frames(j,3,k) - rxyz_frames(j,3,1)
+      sum_msd = sum_msd + (drx**2.0 + dry**2.0 + drz**2.0)    
+    END DO    
+      
+!    MSD(k) =  sum_msd / (nframes - k + 1)  / natoms
+    MSD(k) =  sum_msd / natoms
+    time_msd(k) = (k - 1) * dump_interval * delta_t 
+    WRITE(10,*) time_msd(k) , MSD(k)
+    WRITE(*,*) "MSD calculation, dt = ",k
+  END DO
+  
+  CALL  derivative(MSD,time_msd,derivative_y)
+  
+  WRITE(10,*) 
+  WRITE(10,*) 
+  WRITE(10,*) "time" , "3D Diffusion coefficient"
+  
+  DO k = 1,size(MSD) - 2
+    WRITE(10,*) time_msd(k) , derivative_y(k) / 6.0      
+  END DO    
+  
+  CLOSE(10)
+  
+END SUBROUTINE MSD_total
+
+
+SUBROUTINE collective_intermediate_scattering_function 
+  IMPLICIT NONE
+  INTEGER :: i , j , jj , k , kk   
+  COMPLEX(8) :: a , b , c
+  
+  OPEN(unit=6,file="Fc.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Fc.out"
+  
+  WRITE(6,'(3x,a5,13x,a3,23x,a3,23x,a3)') "time","Fcx","Fcy","Fcz"
+  
+  DO k = 1,nframes,Fc_Tgap  !delta t
+    a = (0.0,0.0)  
+    b = (0.0,0.0)  
+    c = (0.0,0.0)
+    
+    !calculating autocorrelation function
+    DO kk = 1,nframes - k + 1
+      DO j = 1,natoms      
+        DO jj = 1,natoms  
+           a =  a + exp(-1.0 * (0.0, 1.0) * Fc_q * ( rxyz_frames(j,1,k + kk - 1)  - rxyz_frames(jj,1,kk) ) )
+           b =  b + exp(-1.0 * (0.0, 1.0) * Fc_q * ( rxyz_frames(j,2,k + kk - 1)  - rxyz_frames(jj,2,kk) ) )
+           c =  c + exp(-1.0 * (0.0, 1.0) * Fc_q * ( rxyz_frames(j,3,k + kk - 1)  - rxyz_frames(jj,3,kk) ) )
+        END DO 
+      END DO
+    END DO
+    !End calculating autocorrelation function
+      
+    Fsx(k) =  abs(a) / (nframes - k + 1)  / natoms
+    Fsy(k) =  abs(b) / (nframes - k + 1)  / natoms
+    Fsz(k) =  abs(c) / (nframes - k + 1)  / natoms
+    WRITE(6,*) (k - 1) * dump_interval * delta_t , Fsx(k) , Fsy(k) , Fsz(k)
+  END DO
+
+  CLOSE(6)
+END SUBROUTINE collective_intermediate_scattering_function
+
+!SUBROUTINE self_intermediate_scattering_function_FFT 
+!  IMPLICIT NONE
+!  INTEGER :: i , j , k , kk , dim = 3 , m , n , count
+!  REAL(8) :: L , aux1 , aux2 , box_lower_limit , box_upper_limit , q_max , dq , q_max_peak 
+!  REAL(8), DIMENSION(natoms) :: x_ave , y_ave  , z_ave  
+!  COMPLEX(8), DIMENSION(nframes,natoms) :: rho_k_t_x  , rho_k_t_y , rho_k_t_z  
+!  COMPLEX(8), DIMENSION(2 * nframes) :: correl_x , correl_y , correl_z   
+!  
+!  OPEN(unit=1,file=input_file,status="old",iostat = status_open ) 
+!  IF (status_open > 0) STOP "error opening file 1"
+!  READ(1,*)
+!  READ(1,*)
+!  READ(1,*)
+!  READ(1,*) 
+!  READ(1,*)
+!  READ(1,*) box_lower_limit , box_upper_limit
+!  READ(1,*)
+!  READ(1,*)
+!  READ(1,*)
+!  
+!  L = box_upper_limit - box_lower_limit
+!  rho = natoms / (L * L * L)
+!  q_max_peak = 2.0
+!  
+!  
+!  OPEN(unit=7,file="Fs_fft.out",status="replace",iostat = status_open ) 
+!  IF (status_open > 0) STOP "error opening file 7"
+!  
+!  !getting all atoms positions
+!  DO i = 1,nframes
+!    DO j = 1,natoms       
+!        READ(1,*) aux1 , aux2 , rxyz_frames(j,1,i) , rxyz_frames(j,2,i) , rxyz_frames(j,3,i)    
+!    END DO      
+!    
+!    
+!    IF (i < nframes) THEN 
+!      DO j = 1,9
+!        READ(1,*)
+!      END DO
+!    END IF
+!    
+!  END DO 
+!  !End getting all atoms positions
+!  
+!  
+!  !calculating rho(k,t,i)
+!  DO i = 1,nframes  
+!    DO j = 1,natoms  
+!      rho_k_t_x(i,j) = exp(-1.0 * (0.0, 1.0) * q_max_peak * rxyz_frames(j,1,i) ) 
+!      rho_k_t_y(i,j) = exp(-1.0 * (0.0, 1.0) * q_max_peak * rxyz_frames(j,2,i) ) 
+!      rho_k_t_z(i,j) = exp(-1.0 * (0.0, 1.0) * q_max_peak * rxyz_frames(j,3,i) ) 
+!    END DO 
+!  END DO
+!  !End calculating rho(k,t,i)
+!  
+!  Fsx = 0.0
+!  Fsy = 0.0
+!  Fsz = 0.0
+!  
+!  DO j = 1,natoms
+!    correl_x = 0.0
+!    correl_y = 0.0
+!    correl_z = 0.0
+!    
+!    DO i = 1,nframes        
+!      correl_x(i) = rho_k_t_x(i,j)
+!      correl_y(i) = rho_k_t_y(i,j) 
+!      correl_z(i) = rho_k_t_z(i,j)
+!    END DO  
+!    
+!  
+!    !fourier transforming rho(k,t) in rho(k,frequency)
+!    CALL fft(correl_x)
+!    CALL fft(correl_y)
+!    CALL fft(correl_z)
+!    !End fourier transforming rho(k,t) in rho(k,frequency)
+!   
+!    !calculating correlations in frequency
+!     correl_x = correl_x * conjg(correl_x)
+!     correl_y = correl_y * conjg(correl_y)
+!     correl_z = correl_z * conjg(correl_z)
+!     !End calculating correlations in frequency
+!   
+!     !calculating correlations in time
+!     CALL ifft(correl_x)
+!     CALL ifft(correl_y)
+!     CALL ifft(correl_z)
+!     !End calculating correlations in time
+!   
+!     DO i = 1,nframes    !normalizing results    
+!       Fsx(i) = Fsx(i) + (1.0 / (nframes - i + 1) ) * correl_x(i) 
+!       Fsy(i) = Fsy(i) + (1.0 / (nframes - i + 1) ) * correl_y(i) 
+!       Fsz(i) = Fsz(i) + (1.0 / (nframes - i + 1) ) * correl_z(i) 
+!     END DO  
+!  END DO
+!  
+!  DO j = 1,nframes
+!    WRITE(7,*) "t[",j,"]" , Fsx(j) / natoms , Fsy(j) / natoms , Fsz(j) / natoms 
+!  END DO
+!
+!    
+!  CLOSE(1) 
+!  CLOSE(7)
+!END SUBROUTINE self_intermediate_scattering_function_FFT
+
+
+SUBROUTINE self_intermediate_scattering_function 
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk   
+  COMPLEX(8) :: a , b , c
+  
+  OPEN(unit=5,file="Fs.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Fs.out"
+  
+  WRITE(5,'(3x,a5,13x,a3,23x,a3,23x,a3)') "time","Fsx","Fsy","Fsz"     
+  
+  !this is a correlation function for each particle (averaged)
+  
+  DO k = 1,nframes,Fs_Tgap  !delta t, Tgap for selecting time origins
+    a = (0.0,0.0)  
+    b = (0.0,0.0)  
+    c = (0.0,0.0)
+     
+    DO kk = 1,nframes - k + 1 !this is tmax, it is the number of origins used for calculating correlation
+      DO j = 1,natoms      
+        a =  a + exp(-1.0 * (0.0, 1.0) * Fs_q * ( rxyz_frames(j,1,k + kk - 1)  - rxyz_frames(j,1,kk) ) )
+        b =  b + exp(-1.0 * (0.0, 1.0) * Fs_q * ( rxyz_frames(j,2,k + kk - 1)  - rxyz_frames(j,2,kk) ) )
+        c =  c + exp(-1.0 * (0.0, 1.0) * Fs_q * ( rxyz_frames(j,3,k + kk - 1)  - rxyz_frames(j,3,kk) ) )     
+      END DO
+    END DO
+    
+    !averaging in tmax and in natoms
+    Fsx(k) =  abs(a) / (nframes - k + 1) / natoms  
+    Fsy(k) =  abs(b) / (nframes - k + 1) / natoms
+    Fsz(k) =  abs(c) / (nframes - k + 1) / natoms
+    WRITE(5,*) (k - 1) * dump_interval * delta_t , Fsx(k) , Fsy(k) , Fsz(k)
+  END DO
+
+  CLOSE(5)
+END SUBROUTINE self_intermediate_scattering_function
+
+SUBROUTINE static_factor_1 
+  IMPLICIT NONE
+  INTEGER :: i , j , k , kk , m , n , count , pos
+  COMPLEX(8) :: a , b , c 
+  REAL(8) :: dq, dx, dy, dz   
+  
+  dq = 2 * pi / L 
+  
+  OPEN(unit=3,file="S(q).out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file S(q).out"
+  
+  OPEN(unit=4,file="Ls.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Ls.out"
+  
+  WRITE(4,*) "time (simu. units)   ","Ls"
+  
+  DO i = 1,nframes
+      
+    WRITE(3,*) "timestep    ",i - 1
+    
+    
+    !calculating S(q)
+    DO j = 1,number_of_bins_sq 
+      q(j) = j * dq
+      
+      
+      a = (0.0,0.0)  
+      b = (0.0,0.0)  
+      c = (0.0,0.0)
+      DO k = 1,natoms
+        DO kk = 1,natoms 
+          dx = rxyz_frames(kk,1,i) - rxyz_frames(k,1,i)
+          dx = dx - L*nint(dx/L)
+          dy = rxyz_frames(kk,2,i) - rxyz_frames(k,2,i) 
+          dy = dy - L*nint(dy/L)
+          dz = rxyz_frames(kk,3,i) - rxyz_frames(k,3,i)  
+          dz = dz - L*nint(dz/L)  
+          a =  a + exp( (0.0, 1.0) * q(j) * dx )
+          b =  b + exp( (0.0, 1.0) * q(j) * dy )
+          c =  c + exp( (0.0, 1.0) * q(j) * dz ) 
+        END DO
+      END DO
+      
+      S_qx(j) =  abs(a) / natoms
+      S_qy(j) =  abs(b) / natoms
+      S_qz(j) =  abs(c) / natoms
+      S_q(j) = ( S_qx(j) + S_qy(j) + S_qz(j) ) / 3.0
+      WRITE(3,*) q(j) , S_qx(j) , S_qy(j) , S_qz(j) , S_q(j) 
+      
+      S_qx_ave(j) = S_qx_ave(j) + S_qx(j)
+      S_qy_ave(j) = S_qy_ave(j) + S_qy(j)
+      S_qz_ave(j) = S_qz_ave(j) + S_qz(j)
+      S_q_ave(j) = S_q_ave(j) + S_q(j)
+            
+    END DO  
+    !end calculating S(q)
+    
+    CALL ordenar_cres(S_q,pos)
+    Ls(i) = 2 * pi / q(pos) / radius ! Ls is dimensionless
+    WRITE(3,*) "Ls = ", Ls(i)
+    
+    WRITE(4,*) real(i) * delta_t * dump_interval,Ls(i)
+    
+    WRITE(3,*)
+    WRITE(3,*)
+    
+    WRITE(*,*) "S(q) of frame" ,i - 1 , "Done" 
+    
+  END DO  
+  
+  WRITE(3,*) "S(q) averaged  "
+  DO j = 1, number_of_bins_sq
+    S_qx_ave(j) = S_qx_ave(j) / nframes
+    S_qy_ave(j) = S_qy_ave(j) / nframes
+    S_qz_ave(j) = S_qz_ave(j) / nframes
+    S_q_ave(j) = S_q_ave(j) / nframes
+    WRITE(3, *) q(j), S_qx_ave(j), S_qy_ave(j), S_qz_ave(j), S_q_ave(j)
+  END DO
+
+  CLOSE(3)
+  CLOSE(4)
+END SUBROUTINE static_factor_1 
+
+SUBROUTINE fitting_gr
+IMPLICIT NONE
+INTEGER :: i , j , k ,pos
+REAL(8), DIMENSION(number_of_bins_gr) :: x ,y , y2 
+REAL(8):: h , aux
+
+IF (radial_distribution_flag == 0) THEN
+  CALL radial_distri
+END IF
+
+OPEN(unit=2,file="gr_fitted.out",status="replace",iostat = status_open ) 
+IF (status_open > 0) STOP "error opening file gr_fitted.out"
+
+
+DO j = 1,number_of_bins_gr 
+  x(j) = distance_rdf(j)
+END DO
+
+h = (x(number_of_bins_gr - 1) - x(1)) / n_interval
+
+DO j = 1,n_interval+1
+  distance_rdf_fitted(j) = x(1)+(j-1)*h
+END DO 
+
+DO i = 1,nframes 
+  
+  DO j = 1,number_of_bins_gr     
+    y(j) = rdf(j,i)
+    IF (rdf(j,i) > 0.0) THEN
+      pos = j
+      EXIT
+    END IF    
+  END DO
+  
+  DO j = pos+1,number_of_bins_gr     
+    y(j) = rdf(j,i)    
+  END DO
+  
+  CALL  spline(x,y,10e31_dp,10e31_dp,y2) 
+  
+  DO j = 1,n_interval+1
+    rdf_fitted(j,i) = splint(x,y,y2,distance_rdf_fitted(j))
+    IF ( ( distance_rdf_fitted(j) < distance_rdf(pos) ) .or. (rdf_fitted(j,i) < 0.0)) THEN 
+      rdf_fitted(j,i) = 0.0  
+    END IF    
+  END DO 
+ 
+END DO  
+
+DO i = 1,nframes
+    
+  IF (i == 1 .or. i == nframes .or. (mod(i-1,gr_Tgap) == 0) ) THEN
+  !writing gr for one frame
+  WRITE(2,*) " timestep ", i - 1
+  WRITE(2,*) " distance                   g(r)"  
+  
+  DO j = 1,n_interval+1 
+    WRITE(2,*) distance_rdf_fitted(j) , rdf_fitted(j,i)
+  END DO
+  WRITE(2,*)
+  WRITE(2,*)
+  !end writing gr for one frame
+  END IF 
+  
+END DO    
+  
+CLOSE(2)
+END SUBROUTINE fitting_gr   
+
+SUBROUTINE static_factor_2 
+  IMPLICIT NONE
+  INTEGER :: i , j , k , m , n , count , pos
+  REAL(8), DIMENSION(number_of_bins_gr) :: y
+  REAL(8) :: dq , aux
+  
+  dq = 2 * pi / L 
+  
+  IF (radial_distribution_flag == 0) THEN
+    CALL radial_distri
+  END IF
+  
+  OPEN(unit=3,file="S(q)_2.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file S(q)_2.out"
+  
+  OPEN(unit=4,file="Ls.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file Ls.out"
+  
+   WRITE(4,*) "  time (simu. units)   ","     Ls", "                       Peak height"
+  
+  DO i = 1,nframes
+    
+    WRITE(3,*) "timestep    ",i - 1
+        
+    DO j = 1,number_of_bins_sq 
+      q(j) = j * dq
+      
+      !making vector to integrate r²g(r)sin(qr)/qr
+      DO k = 1,number_of_bins_gr 
+     
+        y(k)  =  distance_rdf(k) * (rdf(k,i) - 1.0 ) * (sin( q(j) * distance_rdf(k) ) ) 
+        
+      END DO    
+     
+      S_q(j) = 1 + 4.0 * pi * rho * trapezios(y,distance_rdf,number_of_bins_gr) / q(j)
+      S_q_ave(j) = S_q_ave(j) + S_q(j)
+     
+      WRITE(3,*) q(j) , S_q(j) 
+      
+    END DO     
+    
+    CALL ordenar_cres(S_q,pos)
+    Ls(i) = 2 * pi / q(pos) / radius ! Ls is dimensionless
+    WRITE(3,*) "Ls = ", Ls(i)
+    
+    WRITE(4,*) real(i-1) * delta_t * dump_interval,Ls(i), S_q(number_of_bins_sq)
+    
+    WRITE(3,*)
+    WRITE(3,*) 
+    
+    WRITE(*,*) "S(q) of frame" ,i - 1 , "Done" 
+    
+  END DO 
+  
+  WRITE(3,*) "S(q) averaged  "
+  DO j = 1,number_of_bins_sq 
+    S_q_ave(j) = S_q_ave(j) / nframes
+    WRITE(3,*) q(j) , S_q_ave(j)
+  END DO  
+  
+  CLOSE(3)
+  CLOSE(4)
+END SUBROUTINE static_factor_2
+
+SUBROUTINE static_factor_3
+  IMPLICIT NONE
+  INTEGER :: i , j , k 
+  REAL(8), DIMENSION(number_of_bins_gr) :: y
+  REAL(8) :: dq , aux
+  
+  dq = 2 * pi / L
+  
+  DO j = 1,number_of_bins_sq 
+    q(j) = j * dq   
+  END DO
+  
+  IF (radial_distribution_flag == 0) THEN
+    CALL radial_distri
+  END IF
+  
+  OPEN(unit=3,file="S(q)_3.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening file S(q)_3.out"
+
+      
+    DO k = 1,number_of_bins_gr     
+      y(k)  =  rdf_ave(k)       
+    END DO  
+        
+    CALL realft_dp(y,1)  
+    
+    S_q = 1.0 + rho * y
+    
+!    WRITE(3,*) "timestep    ",i - 1
+    
+    DO j=1,number_of_bins_sq
+      WRITE(3,*) q(j) , S_q(j) 
+    END DO     
+
+    WRITE(3,*)
+    WRITE(3,*) 
+    
+!    S_q_ave = S_q_ave + S_q 
+!    
+!
+!  
+!  WRITE(3,*) "S(q) averaged"
+!  DO j = 1,number_of_bins_sq 
+!    S_q_ave(j) = S_q_ave(j) / ave_number_Sq
+!    WRITE(3,*) q(j) , S_q_ave(j)
+!  END DO
+!  
+  CLOSE(3)
+!    
+!  IMPLICIT NONE
+!  INTEGER :: i , j , k
+!  REAL(8) :: dq
+!  COMPLEX(8) , DIMENSION (number_of_bins_sq,3,nframes) :: rho_q , rho_q_negative
+!  COMPLEX(8) , DIMENSION (number_of_bins_sq) :: aux_x, aux_y, aux_z , aux_x_negative, aux_y_negative, aux_z_negative  
+!  
+!  rho_q = 0.0
+!  rho_q_negative = 0.0
+!  
+!  dq = 2 * pi / L !cubic box all the directions have the same dq
+!  
+!  OPEN(unit=3,file="S(q)_3.out",status="replace",iostat = status_open ) 
+!  IF (status_open > 0) STOP "error opening file S(q)_3.out"
+!  
+!  DO i = 1,nframes,Sq_Tgap! loop for q
+!    WRITE(3,*) "timestep    ",i - 1
+!    
+!    
+!    DO j = 1,number_of_bins_sq 
+!      q(j) = j * dq
+!      
+!      DO k = 1, natoms 
+!        rho_q(j,1,i) = rho_q(j,1,i) + exp(-(0.0, 1.0) * q(j) * rxyz_frames(k,1,i))
+!        rho_q_negative(j,1,i) = rho_q_negative(j,1,i) + exp((0.0, 1.0) * q(j) * rxyz_frames(k,1,i))
+!        
+!        rho_q(j,2,i) = rho_q(j,2,i) + exp(-(0.0, 1.0) * q(j) * rxyz_frames(k,2,i))
+!        rho_q_negative(j,2,i) = rho_q_negative(j,2,i) + exp((0.0, 1.0) * q(j) * rxyz_frames(k,2,i))
+!        
+!        rho_q(j,3,i) = rho_q(j,3,i) + exp(-(0.0, 1.0) * q(j) * rxyz_frames(k,3,i))
+!        rho_q_negative(j,3,i) = rho_q_negative(j,3,i) + exp((0.0, 1.0) * q(j) * rxyz_frames(k,1,3))
+!      END DO
+!      
+!      aux_x(j) = rho_q(j,1,i)
+!      aux_x_negative(j) = rho_q_negative(j,1,i) 
+!      aux_y(j) = rho_q(j,2,i)
+!      aux_y_negative(j) = rho_q_negative(j,2,i) 
+!      aux_z(j) = rho_q(j,3,i)
+!      aux_z_negative(j) = rho_q_negative(j,3,i) 
+!          
+!    END DO 
+!    
+!    S_qx = 0.0
+!    S_qy = 0.0
+!    S_qz = 0.0
+!    
+!    CALL correl_complex(aux_x, aux_x_negative, S_qx)
+!    S_qx = S_qx  / natoms
+!    CALL correl_complex(aux_y, aux_y_negative, S_qy)
+!    S_qy = S_qy  / natoms
+!    CALL correl_complex(aux_z, aux_z_negative, S_qz)
+!    S_qz = S_qz  / natoms
+!    
+!    DO j = 1,number_of_bins_sq 
+!      WRITE(3,*) q(j) , S_qx(j) , S_qy(j), S_qz(j) , (S_qx(j) + S_qy(j) + S_qz(j)) / 3.0   
+!      S_qx_ave(j) = S_qx_ave(j) + S_qx(j)
+!      S_qy_ave(j) = S_qy_ave(j) + S_qy(j)
+!      S_qz_ave(j) = S_qz_ave(j) + S_qz(j)
+!    END DO  
+!    
+!    WRITE(3,*)
+!    WRITE(3,*)
+!  END DO
+!  
+!  WRITE(3,*) "S(q) averaged"
+!  
+!  DO j = 1,number_of_bins_sq 
+!    S_qx_ave(j) = S_qx_ave(j) / nframes 
+!    S_qy_ave(j) = S_qy_ave(j) / nframes
+!    S_qz_ave(j) = S_qz_ave(j) / nframes  
+!    S_q_ave(j) = (S_qx_ave(j) + S_qy_ave(j) + S_qz_ave(j)) / 3.0
+!    WRITE(3,*) q(j) , S_qx_ave(j) , S_qy_ave(j) , S_qz_ave(j) , S_q_ave(j)
+!  END DO
+!  
+!  CLOSE(3)
+END SUBROUTINE static_factor_3
+
+SUBROUTINE radial_distri
+  IMPLICIT NONE
+  INTEGER :: i , j , k , z , pico1, pico2
+  REAL(8) :: dr , dx , dy , dz
+  REAL(8), DIMENSION(:), ALLOCATABLE :: y
+  rdf_ave = 0.0 
+  
+  radial_distribution_flag = 1
+  
+  dr = 0.5 * L / number_of_bins_gr
+  
+  OPEN(unit=2,file="rdf.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening rdf file"
+  
+  OPEN(unit=3,file="coordination_number.out",status="replace",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening coordination_number file"
+  WRITE(3,*) "Posição", "                    Número de Coordenação"
+  
+  DO i = 1,nframes
+    
+    !calculating gr for one frame
+    DO j = 1,natoms-1 !loop for number of atoms
+      DO k = j+1,natoms   
+        dx = rxyz_frames(j,1,i) - rxyz_frames(k,1,i)
+        dx = dx - L*nint(dx/L)
+        dy = rxyz_frames(j,2,i) - rxyz_frames(k,2,i)
+        dy = dy - L*nint(dy/L)
+        dz = rxyz_frames(j,3,i) - rxyz_frames(k,3,i)   
+        dz = dz - L*nint(dz/L)
+        vetor_length = sqrt(dx*dx+dy*dy+dz*dz)
+        IF (vetor_length < 0.5 * L) THEN
+          rdf(ceiling(vetor_length / dr),i) = rdf(ceiling(vetor_length / dr),i) + 2
+        END IF
+      END DO  
+    END DO 
+    
+    DO z = 1,number_of_bins_gr
+      distance_rdf(z) = (z-0.5)*dr   
+      rdf(z,i) =  rdf(z,i) / ( (natoms - 1)  * 4.0 / 3.0 * pi * ((z) ** 3 - (z - 1) ** 3) * (dr ** 3) * rho)
+    END DO
+    !end calculating gr for one frame
+    
+    IF (i == 1 .or. i == nframes .or. (mod(i-1,gr_Tgap) == 0) ) THEN
+    !writing gr for one frame
+    WRITE(2,*) " timestep ", i - 1
+    WRITE(2,*) " distance                   g(r)"
+    DO j = 1,number_of_bins_gr
+      WRITE(2,*) distance_rdf(j) , rdf(j,i)  
+    END DO
+    WRITE(2,*)
+    WRITE(2,*)
+    !end writing gr for one frame
+    END IF    
+    
+    WRITE(*,*) "RDF calculation, frame = ",i
+    
+  END DO  
+  
+  DO i = 1,nframes
+   DO j = 1,number_of_bins_gr
+      rdf_ave(j) = rdf_ave(j) + rdf(j,i)
+   END DO
+  END DO
+  
+  WRITE(2,*) "RDF(q) averaged  "
+  DO j = 1,number_of_bins_gr
+    rdf_ave(j) = rdf_ave(j)/nframes
+    WRITE(2,*) distance_rdf(j) , rdf_ave(j)  
+  END DO
+  
+  pico1 = minloc(rdf_ave,DIM=1) !posição do primeiro mínimo 
+
+ALLOCATE(y(number_of_bins_gr))
+
+
+! Calculating Coordination number
+!  y = 0.0
+!  DO j = 1,number_of_bins_gr
+!    WRITE(*,*) "Coordination number calculation, bin = ",i  
+!    y(j) =  rdf_ave(j) * distance_rdf(j) * distance_rdf(j)
+!    WRITE(3,*) distance_rdf(j), 4.0 * pi * rho * trapezios(y,distance_rdf,number_of_bins_gr)
+!  END DO
+
+  
+!  DO j = 1,number_of_bins_gr - 1
+!    rdf_ave(j) = rdf_ave(j) - 1.0
+!  END DO
+!  
+!  CALL realft_dp(rdf_ave,1)
+!  
+!  OPEN(unit=3,file="fft_rdf.out",status="replace",iostat = status_open ) 
+!  IF (status_open > 0) STOP "error opening file fft_rdf.out"
+!  
+!  OPEN(unit=4,file="fft_rdf_ave.out",status="replace",iostat = status_open ) 
+!  IF (status_open > 0) STOP "error opening file fft_rdf_ave.out"
+!  
+!  DO j = 1,number_of_bins_gr - 1
+!    WRITE(3,*) distance_rdf(j) , rdf_ave(j)*rho + 1.0  
+!  END DO
+!  
+!  rdf_ave = 0.0
+!  DO i = 1,nframes
+!   auxx = 0  
+!   DO j = 1,number_of_bins_gr-1 
+!      auxx(j) = auxx(j) + rdf(j,i) - 1.0
+!      write(*,*) auxx(j)
+!   END DO
+!   
+!   CALL realft_dp(auxx,1)
+!   
+!   DO j = 1,number_of_bins_gr -1
+!    write(*,*) auxx(j)
+!   END DO
+!   
+!   DO j = 1,number_of_bins_gr -1
+!    rdf_ave(j) = rdf_ave(j) + auxx(j)
+!   END DO
+!  END DO
+!  
+!  
+!  DO j = 1,number_of_bins_gr -1
+!    rdf_ave(j) = (rdf_ave(j)/nframes)*rho + 1.0
+!    WRITE(4,*) distance_rdf(j) , rdf_ave(j)*rho + 1.0 
+!  END DO 
+!  
+  DEALLOCATE(y)
+  CLOSE(2)
+  CLOSE(3)
+!  CLOSE(4)
+  
+END SUBROUTINE radial_distri 
+
+
+SUBROUTINE alloc
+    
+  IMPLICIT NONE
+  
+  ALLOCATE(rdf_ave(number_of_bins_gr))
+  ALLOCATE(rxyz_frames(natoms,3,nframes),vxyz_frames(natoms,3,nframes),Nc(natoms,nframes),index_part(natoms))
+  ALLOCATE(S_qx(number_of_bins_sq),S_qy(number_of_bins_sq),S_qz(number_of_bins_sq))
+  ALLOCATE(S_q(number_of_bins_sq) , bond_length(nframes))
+  ALLOCATE(q(number_of_bins_sq),rdf(number_of_bins_gr,nframes),distance_rdf(number_of_bins_gr))
+  ALLOCATE(Fsx(nframes),Fsy(nframes),Fsz(nframes),MSD(nframes),Dt(nframes),Pc(13,nframes),group_size(13,nframes))
+  ALLOCATE(S_qx_ave(number_of_bins_sq),S_qy_ave(number_of_bins_sq),S_qz_ave(number_of_bins_sq),S_q_ave(number_of_bins_sq))
+  ALLOCATE(Ls(nframes),rdf_smooth(number_of_bins_gr - num_poin_appro_rdf + 1,nframes))
+  ALLOCATE(rdf_fitted(n_interval + 1,nframes),distance_rdf_fitted(n_interval + 1)) !It dont take the final 
+  ALLOCATE(rx(n_molecules,n_parti_per_molecule,nframes))    
+  ALLOCATE(ry(n_molecules,n_parti_per_molecule,nframes)) 
+  ALLOCATE(rz(n_molecules,n_parti_per_molecule,nframes)) 
+  ALLOCATE(index(n_molecules)) 
+  rx = 0.0
+  ry = 0.0
+  rz = 0.0
+  index = 0
+  distance_rdf_fitted = 0.0
+  rdf_fitted = 0.0
+  Ls = 0.0
+  bond_length = 0.0
+  S_qx_ave = 0.0 
+  S_qy_ave = 0.0
+  S_qz_ave = 0.0 
+  S_q_ave  = 0.0
+  group_size = 0.0
+  Pc = 0.0
+  Dt = 0.0
+  MSD = 0.0
+  Fsx = 0.0
+  Fsx = 0.0
+  Fsx = 0.0
+  q = 0.0
+  S_qx = 0.0
+  S_qy = 0.0
+  S_qz = 0.0 
+  rdf = 0.0
+  rdf_smooth = 0.0
+  distance_rdf = 0.0
+  Nc = 0.0
+
+END SUBROUTINE  alloc  
+
+SUBROUTINE dealloc
+    
+  IMPLICIT NONE
+  
+  DEALLOCATE(S_qx , S_qy , S_qz , q , distance_rdf , rdf,S_qx_ave , S_qy_ave , S_qz_ave , S_q_ave)
+  DEALLOCATE(S_q,Nc,rxyz_frames,Fsx,Fsy,Fsz,MSD,Dt,Pc,group_size,index_part,bond_length,Ls,rx,ry,rz,index)
+
+END SUBROUTINE  dealloc
+
+
+SUBROUTINE ordenar_cres(x,pos) !ordena números positivos não repetidos em ordem crescente, quero posição maximo
+    REAL(8), DIMENSION(:), INTENT(INOUT)  :: x 
+    integer, INTENT(INOUT)  :: pos 
+    INTEGER :: i,j,N
+    REAL ::  aux,aux2 
+    N=size(x)
+    
+    aux = 0.0
+    aux2 = 0.0
+    
+    do i = N,1, -1
+        do j = N,1,-1
+            if (x(i) > x(j)) then
+              aux = x(i)
+              x(i) = x(j)
+              x(j) = aux
+              IF (aux > aux2) THEN
+                pos = i
+                aux2 = aux
+              END IF
+            end if
+         end do
+    end do
+    
+END SUBROUTINE ordenar_cres
+
+SUBROUTINE ordenar_decres(x,pos) !ordena números positivos não repetidos em ordem decrescente , quero posição mínimo
+    REAL(8), DIMENSION(:), INTENT(INOUT)  :: x 
+    INTEGER, INTENT(INOUT)  :: pos 
+    INTEGER :: i,j,N
+    REAL ::  aux,aux2 
+    N=size(x)
+    
+    aux = 10000000
+    aux2 = 10000000
+    
+    DO i = 1,N-1!N,1, -1
+        DO j = 1,N!N,1,-1
+            IF (x(i) < x(j)) then
+              aux = x(i)
+              x(i) = x(j)
+              x(j) = aux
+              IF (aux < aux2) THEN
+                pos = i
+                aux2 = aux
+              END IF
+            END IF
+        END DO
+    END DO
+    
+END SUBROUTINE ordenar_decres
+
+SUBROUTINE read_data
+  
+  READ(*,*);  READ(*,*);  READ(*,*) input_file , delta_t , dump_interval , radius , cutoff , Kb , Temp
+  READ(*,*);  READ(*,*);  READ(*,*); READ(*,*); READ(*,*); READ(*,*) Pc_flag
+  READ(*,*);  READ(*,*);  READ(*,*) radial_distribution_flag , number_of_bins_gr , gr_Tgap 
+  READ(*,*);  READ(*,*);  READ(*,*) static_factor_flag , static_factor_option , number_of_bins_sq 
+  READ(*,*);  READ(*,*);  READ(*,*); READ(*,*); READ(*,*); READ(*,*) Fs_flag , Fs_Tgap , Fs_q
+  READ(*,*);  READ(*,*);  READ(*,*) Fc_flag , Fc_Tgap , Fc_q
+  READ(*,*);  READ(*,*);  READ(*,*) MSD_flag , MSD_Tgap ,MSD_by_contact_number_flag
+  READ(*,*);  READ(*,*);  READ(*,*) Nc_by_contact_number_flag 
+  READ(*,*);  READ(*,*);  READ(*,*) cluster_flag, dist_cluster , n_molecules , n_parti_per_molecule, max_contacts
+  READ(*,*);  READ(*,*);  READ(*,*); READ(*,*); READ(*,*); READ(*,*) flag_rheology,stress_file, delta_t_stress , &
+  dump_interval_stress, tp
+  READ(*,*);  READ(*,*);  READ(*,*) stress_acf_flag, stress_acf_Tgap , stress_acf_option, correl_leng
+  READ(*,*);  READ(*,*);  READ(*,*) G_primes_flag,  G_primes_option, strain_ampli
+  
+END SUBROUTINE read_data  
+
+
+SUBROUTINE get_particle_positions
+  INTEGER :: control = 0 , i , j , atom_id , atom_type , mol_id
+  REAL(8) :: x , y , z , v_x, v_y, v_z
+  
+  nframes = 0  
+  
+  OPEN(unit=1,file=input_file,status="old",iostat = status_open ) 
+  IF (status_open > 0) STOP "error opening input_file from lammps"
+  
+  DO WHILE (control == 0)
+         nframes = nframes + 1 !getting number of lines
+         READ (1 , * , iostat= control) 
+  END DO
+  
+  REWIND 1
+  
+  READ(1,*)
+  READ(1,*)
+  READ(1,*)
+  READ(1,*) natoms 
+  READ(1,*)
+  READ(1,*) box_lower_limit , box_upper_limit
+  READ(1,*)
+  READ(1,*)
+  READ(1,*)
+  
+  nframes = nframes / (natoms + 9)
+  L = box_upper_limit - box_lower_limit
+  rho = natoms / (L * L * L) 
+  
+  CALL alloc
+    
+  !getting all atoms positions
+  DO i = 1,nframes    
+    index = 0      
+    DO j = 1,natoms    
+        !READ(1,*) atom_id, atom_type , x , y , z !, v_x, v_y, v_z        
+        READ(1,*) atom_id , mol_id, atom_type , x , y , z !, v_x, v_y, v_z
+        rxyz_frames(j,1,i) = x
+        rxyz_frames(j,2,i) = y
+        rxyz_frames(j,3,i) = z
+        !vxyz_frames(atom_id,1,i) = v_x
+        !vxyz_frames(atom_id,2,i) = v_y
+        !vxyz_frames(atom_id,3,i) = v_z
+        
+        index(mol_id) = index(mol_id) + 1
+        rx(mol_id,index(mol_id),i) = x 
+        ry(mol_id,index(mol_id),i) = y
+        rz(mol_id,index(mol_id),i) = z
+
+    END DO      
+
+    IF (i < nframes) THEN 
+      DO j = 1,9
+        READ(1,*)
+      END DO
+    END IF
+    
+  END DO     
+  !end getting all atoms positions
+  
+  CLOSE(1)
+   
+END SUBROUTINE get_particle_positions
+
+
+
+END MODULE functions
